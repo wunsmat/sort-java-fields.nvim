@@ -1,15 +1,29 @@
 local M = {}
 
 local defaults = {
-	group_static = true,
+	group_by = { "static" },
 	group_separator = "",
 	ignore_case = true,
+	format_on_save = false,
 }
 
 M.options = vim.deepcopy(defaults)
 
+local format_on_save_group = vim.api.nvim_create_augroup("SortJavaFieldsFormatOnSave", { clear = true })
+
 function M.setup(opts)
 	M.options = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts or {})
+
+	vim.api.nvim_clear_autocmds({ group = format_on_save_group })
+	if M.options.format_on_save then
+		vim.api.nvim_create_autocmd("BufWritePre", {
+			group = format_on_save_group,
+			pattern = "*.java",
+			callback = function()
+				M.sort_fields()
+			end,
+		})
+	end
 end
 
 local function separator_lines()
@@ -54,17 +68,65 @@ local function field_name(field_node, bufnr)
 	return ""
 end
 
-local function is_static(field_node, bufnr)
+local function get_modifiers(field_node, bufnr)
+	local mods = {}
 	for child in field_node:iter_children() do
 		if child:type() == "modifiers" then
 			for word in vim.treesitter.get_node_text(child, bufnr):gmatch("%S+") do
-				if word == "static" then
-					return true
-				end
+				mods[word] = true
 			end
 		end
 	end
+	return mods
+end
+
+local function visibility_rank(mods)
+	if mods.public then
+		return 0
+	end
+	if mods.protected then
+		return 1
+	end
+	if mods.private then
+		return 3
+	end
+	return 2
+end
+
+local function group_key(mods)
+	local key = {}
+	for _, by in ipairs(M.options.group_by or {}) do
+		if by == "static" then
+			table.insert(key, mods.static and 0 or 1)
+		elseif by == "final" then
+			table.insert(key, mods.final and 0 or 1)
+		elseif by == "visibility" then
+			table.insert(key, visibility_rank(mods))
+		end
+	end
+	return key
+end
+
+local function compare_keys(a, b)
+	for i = 1, math.max(#a, #b) do
+		local av, bv = a[i] or 0, b[i] or 0
+		if av ~= bv then
+			return av < bv
+		end
+	end
 	return false
+end
+
+local function keys_equal(a, b)
+	if #a ~= #b then
+		return false
+	end
+	for i = 1, #a do
+		if a[i] ~= b[i] then
+			return false
+		end
+	end
+	return true
 end
 
 local function find_field_runs(body)
@@ -100,27 +162,28 @@ local function build_edit(run, bufnr)
 		local s_node = item.comments[1] or item.field
 		local s_row = ({ s_node:range() })[1]
 		local e_row = ({ item.field:range() })[3]
+		local mods = get_modifiers(item.field, bufnr)
 		table.insert(entries, {
 			name = field_name(item.field, bufnr),
-			static = is_static(item.field, bufnr),
+			group_key = group_key(mods),
 			lines = vim.api.nvim_buf_get_lines(bufnr, s_row, e_row + 1, false),
 		})
 	end
 
 	table.sort(entries, function(a, b)
-		if M.options.group_static and a.static ~= b.static then
-			return a.static
+		if not keys_equal(a.group_key, b.group_key) then
+			return compare_keys(a.group_key, b.group_key)
 		end
 		local an = M.options.ignore_case and a.name:lower() or a.name
 		local bn = M.options.ignore_case and b.name:lower() or b.name
 		return an < bn
 	end)
 
-	local sep_lines = M.options.group_static and separator_lines() or {}
+	local sep_lines = separator_lines()
 	local new_lines = {}
-	local prev_static
+	local prev_key
 	for _, e in ipairs(entries) do
-		if M.options.group_static and prev_static ~= nil and prev_static ~= e.static then
+		if prev_key and not keys_equal(prev_key, e.group_key) then
 			for _, sl in ipairs(sep_lines) do
 				table.insert(new_lines, sl)
 			end
@@ -128,7 +191,7 @@ local function build_edit(run, bufnr)
 		for _, l in ipairs(e.lines) do
 			table.insert(new_lines, l)
 		end
-		prev_static = e.static
+		prev_key = e.group_key
 	end
 
 	return { start_row = start_row, end_row = end_row, new_lines = new_lines }

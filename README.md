@@ -70,11 +70,12 @@ vim.api.nvim_create_autocmd("FileType", {
 
 ```lua
 require("sort-java-fields").setup({
-  group_static = true,    -- group static fields above instance fields
-  group_separator = "",   -- string inserted between groups (split on \n).
-                          -- "" → one blank line. false → no separator.
-                          -- "// --- instance ---" → custom marker.
-  ignore_case = true,     -- case-insensitive alphabetical sort
+  group_by = { "static" },   -- partition keys, applied in order. See below.
+  group_separator = "",      -- string inserted between groups (split on \n).
+                             -- "" → one blank line. false → no separator.
+                             -- "// --- instance ---" → custom marker.
+  ignore_case = true,        -- case-insensitive alphabetical sort
+  format_on_save = false,    -- run :SortJavaFields on BufWritePre for *.java
 })
 ```
 
@@ -82,9 +83,20 @@ require("sort-java-fields").setup({
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `group_static` | `boolean` | `true` | When `true`, statics sort to the top of each block, then instance fields. When `false`, all fields sort alphabetically together. |
-| `group_separator` | `string \| false` | `""` | Inserted between the static and instance groups. The string is split on `\n`, so `""` produces one blank line. Pass `false` to omit. Ignored when `group_static = false`. |
+| `group_by` | `string[]` | `{ "static" }` | Partition keys applied in order. Available: `"static"` (statics first), `"final"` (finals first), `"visibility"` (public → protected → package → private). Use `{}` to disable grouping and sort everything alphabetically. |
+| `group_separator` | `string \| false` | `""` | Inserted between groups. The string is split on `\n`, so `""` produces one blank line. Pass `false` to omit. Has no effect when `group_by = {}`. |
 | `ignore_case` | `boolean` | `true` | When `true`, the sort is case-insensitive (`apple < Banana < cherry`). When `false`, ASCII order applies (uppercase before lowercase). |
+| `format_on_save` | `boolean` | `false` | When `true`, `setup()` registers a `BufWritePre` autocmd that runs `:SortJavaFields` on save for any `*.java` buffer. |
+
+### `group_by` examples
+
+| Value | Effect |
+| --- | --- |
+| `{ "static" }` | Statics grouped above instance fields (default). |
+| `{ "static", "final" }` | Static-final → static-mutable → instance-final → instance-mutable. |
+| `{ "visibility" }` | `public` → `protected` → package-private → `private`. |
+| `{ "static", "visibility" }` | Statics first, then by visibility within each tier. |
+| `{}` | No grouping; pure alphabetical. |
 
 ## Example
 
