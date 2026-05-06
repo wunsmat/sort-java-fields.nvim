@@ -1,5 +1,29 @@
 local M = {}
 
+local defaults = {
+	group_static = true,
+	group_separator = "",
+	ignore_case = true,
+}
+
+M.options = vim.deepcopy(defaults)
+
+function M.setup(opts)
+	M.options = vim.tbl_deep_extend("force", vim.deepcopy(defaults), opts or {})
+end
+
+local function separator_lines()
+	local sep = M.options.group_separator
+	if sep == false or sep == nil or type(sep) ~= "string" then
+		return {}
+	end
+	local lines = {}
+	for line in (sep .. "\n"):gmatch("([^\n]*)\n") do
+		table.insert(lines, line)
+	end
+	return lines
+end
+
 local BODY_TYPES = {
 	class_body = true,
 	interface_body = true,
@@ -84,17 +108,22 @@ local function build_edit(run, bufnr)
 	end
 
 	table.sort(entries, function(a, b)
-		if a.static ~= b.static then
+		if M.options.group_static and a.static ~= b.static then
 			return a.static
 		end
-		return a.name:lower() < b.name:lower()
+		local an = M.options.ignore_case and a.name:lower() or a.name
+		local bn = M.options.ignore_case and b.name:lower() or b.name
+		return an < bn
 	end)
 
+	local sep_lines = M.options.group_static and separator_lines() or {}
 	local new_lines = {}
 	local prev_static
 	for _, e in ipairs(entries) do
-		if prev_static ~= nil and prev_static ~= e.static then
-			table.insert(new_lines, "")
+		if M.options.group_static and prev_static ~= nil and prev_static ~= e.static then
+			for _, sl in ipairs(sep_lines) do
+				table.insert(new_lines, sl)
+			end
 		end
 		for _, l in ipairs(e.lines) do
 			table.insert(new_lines, l)

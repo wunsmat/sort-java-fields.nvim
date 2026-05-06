@@ -6,7 +6,7 @@ A small Neovim plugin that sorts Java member fields alphabetically using Treesit
 
 - Walks the syntax tree and finds every class / interface / enum / record / annotation body in the buffer.
 - Within each body, finds contiguous runs of `field_declaration` nodes (≥ 2 fields) and sorts them.
-- `static` fields sort to the top of each block (alphabetically), then non-static fields (alphabetically). A blank line is inserted at the boundary.
+- `static` fields sort to the top of each block (alphabetically), then non-static fields (alphabetically). A blank line is inserted at the boundary. (Both behaviors are configurable.)
 - Leading line comments and block comments / Javadoc travel with their field.
 - Does **not** reorder across non-field declarations (e.g. methods between two field blocks). Each block is sorted independently.
 
@@ -26,6 +26,7 @@ Cursor position is irrelevant — every field block in the file is sorted in one
   "wunsmat/sort-java-fields.nvim",
   ft = "java",
   cmd = "SortJavaFields",
+  opts = {}, -- pass any options here, or omit to use defaults
 }
 ```
 
@@ -62,6 +63,28 @@ vim.api.nvim_create_autocmd("FileType", {
   end,
 })
 ```
+
+## Configuration
+
+`setup()` is optional — defaults are applied automatically. Call it only if you want to override.
+
+```lua
+require("sort-java-fields").setup({
+  group_static = true,    -- group static fields above instance fields
+  group_separator = "",   -- string inserted between groups (split on \n).
+                          -- "" → one blank line. false → no separator.
+                          -- "// --- instance ---" → custom marker.
+  ignore_case = true,     -- case-insensitive alphabetical sort
+})
+```
+
+### Options
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `group_static` | `boolean` | `true` | When `true`, statics sort to the top of each block, then instance fields. When `false`, all fields sort alphabetically together. |
+| `group_separator` | `string \| false` | `""` | Inserted between the static and instance groups. The string is split on `\n`, so `""` produces one blank line. Pass `false` to omit. Ignored when `group_static = false`. |
+| `ignore_case` | `boolean` | `true` | When `true`, the sort is case-insensitive (`apple < Banana < cherry`). When `false`, ASCII order applies (uppercase before lowercase). |
 
 ## Example
 
